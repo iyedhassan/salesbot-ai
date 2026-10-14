@@ -1,7 +1,7 @@
-
 from fastapi import FastAPI
 
 from app.config import APP_DESCRIPTION, APP_NAME, APP_VERSION
+from app.routes import router
 
 app = FastAPI(
     title=APP_NAME,
@@ -9,15 +9,6 @@ app = FastAPI(
     version=APP_VERSION,
 )
 
-
-@app.get("/")
-def root():
-    return {
-        "message": "Welcome to SalesBot AI!",
-        "status": "running",
-    }
+app.include_router(router)
 
 
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
