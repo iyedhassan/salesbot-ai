@@ -1,17 +1,19 @@
 
 from fastapi import FastAPI
 
+from app.config import APP_DESCRIPTION, APP_NAME, APP_VERSION
+
 app = FastAPI(
-    title="SalesBot AI",
-    description="API backend for an AI-powered sales chatbot",
-    version="0.1.0",
+    title=APP_NAME,
+    description=APP_DESCRIPTION,
+    version=APP_VERSION,
 )
 
 
 @app.get("/")
 def root():
     return {
-        "message": "Welcome iyed to SalesBot AI!",
+        "message": "Welcome to SalesBot AI!",
         "status": "running",
     }
 
