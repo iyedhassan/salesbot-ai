@@ -25,3 +25,6 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+
+salesbot.db
+*.db
