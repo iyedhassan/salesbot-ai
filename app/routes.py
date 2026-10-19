@@ -6,6 +6,12 @@ from app.database import get_db
 from app.models.lead import Lead
 from app.models.lead_db import LeadDB
 
+# Modèle qui définit la structure des réponses contenant un prospect.
+from app.models.lead_response import LeadResponse
+
+# Modèle utilisé pour les réponses de création et de mise à jour.
+from app.models.lead_operation_response import LeadOperationResponse
+
 router = APIRouter()
 
 
@@ -22,7 +28,12 @@ def health_check():
     return {"status": "healthy"}
 
 
-@router.post("/leads", status_code=201)
+# La création renvoie un code HTTP 201 et une réponse structurée.
+@router.post(
+    "/leads",
+    status_code=201,
+    response_model=LeadOperationResponse,
+)
 def create_lead(lead: Lead, db: Session = Depends(get_db)):
     new_lead = LeadDB(
         name=lead.name,
@@ -45,22 +56,34 @@ def create_lead(lead: Lead, db: Session = Depends(get_db)):
     }
 
 
-@router.get("/leads")
+
+# Renvoie la liste des prospects.
+# list[LeadResponse] signifie : une liste d'objets LeadResponse.
+@router.get("/leads", response_model=list[LeadResponse])
 def get_leads(db: Session = Depends(get_db)):
     return db.query(LeadDB).all()
 
 
-@router.get("/leads/{lead_id}")
+# Renvoie un seul prospect.
+# FastAPI valide la réponse avec LeadResponse.
+@router.get("/leads/{lead_id}", response_model=LeadResponse)
 def get_lead(lead_id: int, db: Session = Depends(get_db)):
     lead = db.query(LeadDB).filter(LeadDB.id == lead_id).first()
 
+    # Si le prospect n'existe pas, l'API renvoie une erreur 404.
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
 
     return lead
 
 
-@router.delete("/leads/{lead_id}")
+
+# Définit le code HTTP et la structure de la réponse de suppression.
+@router.delete(
+    "/leads/{lead_id}",
+    response_model=LeadOperationResponse,
+)
+
 def delete_lead(lead_id: int, db: Session = Depends(get_db)):
     lead = db.query(LeadDB).filter(LeadDB.id == lead_id).first()
 
@@ -81,7 +104,11 @@ def delete_lead(lead_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.put("/leads/{lead_id}")
+# La mise à jour renvoie une réponse structurée.
+@router.put(
+    "/leads/{lead_id}",
+    response_model=LeadOperationResponse,
+)
 def update_lead(
     lead_id: int,
     updated_data: Lead,
