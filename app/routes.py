@@ -11,6 +11,8 @@ from app.models.lead_response import LeadResponse
 
 # Modèle utilisé pour les réponses de création et de mise à jour.
 from app.models.lead_operation_response import LeadOperationResponse
+# Permet de détecter une violation de contrainte dans la base de données.
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter()
 
@@ -29,22 +31,51 @@ def health_check():
 
 
 # La création renvoie un code HTTP 201 et une réponse structurée.
-@router.post(
-    "/leads",
-    status_code=201,
-    response_model=LeadOperationResponse,
-)
+
+@router.post("/leads", status_code=201, response_model=LeadOperationResponse)
 def create_lead(lead: Lead, db: Session = Depends(get_db)):
+    # Recherche si un prospect possède déjà cette adresse e-mail.
+    existing_lead = (
+        db.query(LeadDB)
+        .filter(LeadDB.email == str(lead.email))
+        .first()
+    )
+
+    # Si l'e-mail existe déjà, refuse la création avec le code HTTP 409.
+    if existing_lead is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="A lead with this email already exists",
+        )
+
+    # Crée l'objet destiné à être enregistré dans la base de données.
     new_lead = LeadDB(
         name=lead.name,
         email=str(lead.email),
         company=lead.company,
     )
 
+    # Prépare l'insertion du nouveau prospect.
     db.add(new_lead)
-    db.commit()
+
+    try:
+        # Tente d'enregistrer le prospect dans SQLite.
+        db.commit()
+
+    except IntegrityError:
+        # Annule la transaction en échec pour rétablir la session SQLAlchemy.
+        db.rollback()
+
+        # Renvoie un conflit si la contrainte UNIQUE a été violée.
+        raise HTTPException(
+            status_code=409,
+            detail="A lead with this email already exists",
+        )
+
+    # Récupère l'identifiant généré par la base de données.
     db.refresh(new_lead)
 
+    # Renvoie une réponse structurée au client.
     return {
         "message": "Lead created successfully",
         "lead": {
@@ -54,6 +85,7 @@ def create_lead(lead: Lead, db: Session = Depends(get_db)):
             "company": new_lead.company,
         },
     }
+
 
 
 

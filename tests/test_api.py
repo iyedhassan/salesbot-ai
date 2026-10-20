@@ -276,3 +276,38 @@ def test_delete_nonexistent_lead():
 
     # L'API doit renvoyer 404, sans planter.
     assert response.status_code == 404
+
+def test_create_lead_with_duplicate_email():
+    """
+    Vérifie que l'API refuse deux prospects avec la même adresse e-mail.
+    """
+
+    # Crée un premier prospect : cette opération doit réussir.
+    first_response = client.post(
+        "/leads",
+        json={
+            "name": "Sami",
+            "email": "duplicate@example.com",
+            "company": "ABC",
+        },
+    )
+
+    assert first_response.status_code == 201
+
+    # Essaie de créer un second prospect avec le même e-mail.
+    second_response = client.post(
+        "/leads",
+        json={
+            "name": "Amira",
+            "email": "duplicate@example.com",
+            "company": "XYZ",
+        },
+    )
+
+    # HTTP 409 signifie que la requête entre en conflit avec une donnée existante.
+    assert second_response.status_code == 409
+
+    # Vérifie que l'API explique la cause du refus.
+    assert second_response.json()["detail"] == (
+        "A lead with this email already exists"
+    )
