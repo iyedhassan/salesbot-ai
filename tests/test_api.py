@@ -311,3 +311,148 @@ def test_create_lead_with_duplicate_email():
     assert second_response.json()["detail"] == (
         "A lead with this email already exists"
     )
+
+def test_duplicate_email_does_not_create_second_lead():
+    """
+    Vérifie qu'un e-mail identique ne peut pas être enregistré deux fois.
+    La seconde requête doit renvoyer HTTP 409.
+    """
+
+    # Crée le premier prospect : cette requête doit réussir.
+    first_response = client.post(
+        "/leads",
+        json={
+            "name": "Sami",
+            "email": "unique-check@example.com",
+            "company": "ABC",
+        },
+    )
+
+    # Vérifie que le premier prospect a bien été créé.
+    assert first_response.status_code == 201
+
+    # Tente de créer un second prospect avec le même e-mail.
+    second_response = client.post(
+        "/leads",
+        json={
+            "name": "Amira",
+            "email": "unique-check@example.com",
+            "company": "XYZ",
+        },
+    )
+
+    # L'API doit renvoyer un conflit, et non une erreur serveur 500.
+    assert second_response.status_code == 409
+
+    # Vérifie que le doublon n'a pas été ajouté.
+    leads_response = client.get("/leads")
+
+    assert leads_response.status_code == 200
+
+    # Compte les prospects possédant cet e-mail.
+    matching_leads = [
+        lead
+        for lead in leads_response.json()
+        if lead["email"] == "unique-check@example.com"
+    ]
+
+    # Un seul prospect doit exister avec cette adresse.
+    assert len(matching_leads) == 1
+
+
+
+def test_get_nonexistent_lead_returns_clear_error():
+    """
+    Vérifie qu'un prospect inexistant renvoie une erreur 404
+    avec un message explicite.
+    """
+
+    # Recherche un identifiant qui n'existe pas.
+    response = client.get("/leads/999999")
+
+    # Vérifie le code HTTP : Not Found.
+    assert response.status_code == 404
+
+    # Vérifie que l'erreur explique le problème.
+    assert response.json()["detail"] == "Lead not found"
+
+
+def test_invalid_email_returns_validation_error():
+    """
+    Vérifie qu'un e-mail mal formé est rejeté avant
+    d'être enregistré dans la base de données.
+    """
+
+    # Tente de créer un prospect avec une adresse invalide.
+    response = client.post(
+        "/leads",
+        json={
+            "name": "Sami",
+            "email": "pas-une-adresse-email",
+            "company": "ABC",
+        },
+    )
+
+    # HTTP 422 signifie que les données reçues sont invalides.
+    assert response.status_code == 422
+
+    # FastAPI doit fournir les détails de l'erreur.
+    assert "detail" in response.json()
+
+
+
+def test_update_lead_with_duplicate_email_returns_conflict():
+    """Vérifie qu'un email déjà utilisé est refusé lors d'une mise à jour."""
+
+    # Importe le client et l'application utilisés par le projet.
+    # Ce test utilise une instance locale de TestClient.
+    from fastapi.testclient import TestClient
+    from main import app
+
+    # Crée un client HTTP pour envoyer des requêtes à l'API.
+    # La configuration de la base de test doit être appliquée
+    # comme dans les autres tests du projet.
+    client = TestClient(app)
+
+    # Crée un premier prospect.
+    first_response = client.post(
+        "/leads",
+        json={
+            "name": "Alice",
+            "email": "alice@example.com",
+            "company": "Company A",
+        },
+    )
+    assert first_response.status_code == 201
+
+    # Récupère son identifiant.
+    first_lead_id = first_response.json()["lead"]["id"]
+
+    # Crée un deuxième prospect avec un autre email.
+    second_response = client.post(
+        "/leads",
+        json={
+            "name": "Bob",
+            "email": "bob@example.com",
+            "company": "Company B",
+        },
+    )
+    assert second_response.status_code == 201
+
+    # Essaie d'attribuer à Alice l'email déjà utilisé par Bob.
+    update_response = client.put(
+        f"/leads/{first_lead_id}",
+        json={
+            "name": "Alice",
+            "email": "bob@example.com",
+            "company": "Company A",
+        },
+    )
+
+    # Vérifie que l'API refuse la modification.
+    assert update_response.status_code == 409
+
+    # Vérifie que l'email d'Alice n'a pas changé.
+    get_response = client.get(f"/leads/{first_lead_id}")
+    assert get_response.status_code == 200
+    assert get_response.json()["email"] == "alice@example.com"

@@ -13,6 +13,15 @@ from app.models.lead_response import LeadResponse
 from app.models.lead_operation_response import LeadOperationResponse
 # Permet de détecter une violation de contrainte dans la base de données.
 from sqlalchemy.exc import IntegrityError
+# Importe le service qui recherche un prospect par son identifiant.
+# Importe les fonctions qui gèrent les opérations sur les prospects.
+# Importe les fonctions qui gèrent les opérations sur les prospects.
+from app.services.lead_service import (
+    get_lead_by_id,
+    get_all_leads,
+    update_lead,
+    delete_lead,
+)
 
 router = APIRouter()
 
@@ -93,78 +102,117 @@ def create_lead(lead: Lead, db: Session = Depends(get_db)):
 # list[LeadResponse] signifie : une liste d'objets LeadResponse.
 @router.get("/leads", response_model=list[LeadResponse])
 def get_leads(db: Session = Depends(get_db)):
-    return db.query(LeadDB).all()
+    """
+    Récupère tous les prospects enregistrés.
+    """
 
+    # Délègue la recherche à la couche service.
+    leads = get_all_leads(db)
 
+    # Retourne la liste des prospects à FastAPI.
+    return leads
 # Renvoie un seul prospect.
 # FastAPI valide la réponse avec LeadResponse.
+# Recherche un prospect à partir de son identifiant.
 @router.get("/leads/{lead_id}", response_model=LeadResponse)
-def get_lead(lead_id: int, db: Session = Depends(get_db)):
-    lead = db.query(LeadDB).filter(LeadDB.id == lead_id).first()
+def read_lead(lead_id: int, db: Session = Depends(get_db)):
+    """
+    Récupère un prospect précis depuis la base de données.
 
-    # Si le prospect n'existe pas, l'API renvoie une erreur 404.
+    Args:
+        lead_id : identifiant du prospect demandé.
+        db : session de base de données fournie par FastAPI.
+
+    Returns:
+        Le prospect trouvé.
+
+    Raises:
+        HTTPException 404 si le prospect n'existe pas.
+    """
+
+    # Délègue la recherche au service.
+    lead = get_lead_by_id(db, lead_id)
+
+    # Si le service ne trouve aucun prospect, renvoie une erreur HTTP 404.
     if lead is None:
-        raise HTTPException(status_code=404, detail="Lead not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Lead not found",
+        )
 
+    # Renvoie le prospect trouvé.
+    # LeadResponse définit le format de la réponse JSON.
     return lead
 
 
 
 # Définit le code HTTP et la structure de la réponse de suppression.
+
 @router.delete(
     "/leads/{lead_id}",
     response_model=LeadOperationResponse,
 )
+def delete_lead_route(
+    lead_id: int,
+    db: Session = Depends(get_db),
+):
+    """Supprime un prospect existant."""
 
-def delete_lead(lead_id: int, db: Session = Depends(get_db)):
-    lead = db.query(LeadDB).filter(LeadDB.id == lead_id).first()
+    # Confie la suppression au service.
+    deleted_lead = delete_lead(db, lead_id)
 
-    if lead is None:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    # Si aucun prospect ne correspond à cet identifiant, renvoie 404.
+    if deleted_lead is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Lead not found",
+        )
 
-    db.delete(lead)
-    db.commit()
-
+    # Retourne un message et les données du prospect supprimé.
     return {
         "message": "Lead deleted successfully",
-        "lead": {
-            "id": lead.id,
-            "name": lead.name,
-            "email": lead.email,
-            "company": lead.company,
-        },
+        "lead": deleted_lead,
     }
 
 
 # La mise à jour renvoie une réponse structurée.
+
 @router.put(
     "/leads/{lead_id}",
     response_model=LeadOperationResponse,
 )
-def update_lead(
+def update_lead_route(
     lead_id: int,
-    updated_data: Lead,
+    lead: Lead,
     db: Session = Depends(get_db),
 ):
-    lead = db.query(LeadDB).filter(LeadDB.id == lead_id).first()
+    """Met à jour un prospect existant."""
 
-    if lead is None:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    try:
+        # Demande au service de modifier le prospect.
+        updated_lead = update_lead(
+            db=db,
+            lead_id=lead_id,
+            name=lead.name,
+            email=str(lead.email),
+            company=lead.company,
+        )
+    except ValueError as error:
+        # Renvoie HTTP 409 si l'email est déjà utilisé.
+        raise HTTPException(
+            status_code=409,
+            detail=str(error),
+        ) from error
 
-    lead.name = updated_data.name
-    lead.email = str(updated_data.email)
-    lead.company = updated_data.company
+    # Renvoie HTTP 404 si le prospect n'existe pas.
+    if updated_lead is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Lead not found",
+        )
 
-    db.commit()
-    db.refresh(lead)
-
+    # Retourne le message et le prospect modifié.
     return {
         "message": "Lead updated successfully",
-        "lead": {
-            "id": lead.id,
-            "name": lead.name,
-            "email": lead.email,
-            "company": lead.company,
-        },
+        "lead": updated_lead,
     }
-
