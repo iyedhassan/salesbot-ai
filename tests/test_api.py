@@ -456,3 +456,226 @@ def test_update_lead_with_duplicate_email_returns_conflict():
     get_response = client.get(f"/leads/{first_lead_id}")
     assert get_response.status_code == 200
     assert get_response.json()["email"] == "alice@example.com"
+
+
+def test_get_all_leads_returns_created_leads():
+    """Vérifie que l'API renvoie tous les prospects créés."""
+
+    # Importe le client HTTP et l'application FastAPI.
+    from fastapi.testclient import TestClient
+    from main import app
+
+    # Crée un client pour envoyer des requêtes à l'API.
+    client = TestClient(app)
+
+    # Crée le premier prospect.
+    first_response = client.post(
+        "/leads",
+        json={
+            "name": "Alice",
+            "email": "alice.list@example.com",
+            "company": "Company A",
+        },
+    )
+    assert first_response.status_code == 201
+
+    # Crée le deuxième prospect.
+    second_response = client.post(
+        "/leads",
+        json={
+            "name": "Bob",
+            "email": "bob.list@example.com",
+            "company": "Company B",
+        },
+    )
+    assert second_response.status_code == 201
+
+    # Demande à l'API la liste de tous les prospects.
+    response = client.get("/leads")
+
+    # Vérifie que la requête a réussi.
+    assert response.status_code == 200
+
+    # Récupère la liste renvoyée au format JSON.
+    leads = response.json()
+
+    # Vérifie que les deux prospects sont présents.
+    emails = {lead["email"] for lead in leads}
+    assert "alice.list@example.com" in emails
+    assert "bob.list@example.com" in emails
+
+
+def test_get_all_leads_returns_empty_list():
+    """Vérifie que l'API renvoie une liste vide sans prospects."""
+
+    # Importe le client HTTP et l'application FastAPI.
+    from fastapi.testclient import TestClient
+    from main import app
+
+    # Crée un client HTTP pour interroger l'API.
+    client = TestClient(app)
+
+    # Demande la liste des prospects.
+    response = client.get("/leads")
+
+    # Vérifie que la requête a réussi.
+    assert response.status_code == 200
+
+    # Vérifie que la réponse est une liste JSON vide.
+    assert response.json() == []
+
+
+
+def test_get_lead_by_id_returns_correct_lead():
+    """Vérifie qu'on récupère le bon prospect par son identifiant."""
+
+    # Importe le client HTTP et l'application FastAPI.
+    from fastapi.testclient import TestClient
+    from main import app
+
+    # Crée un client HTTP pour envoyer des requêtes à l'API.
+    client = TestClient(app)
+
+    # Crée un prospect pour effectuer le test.
+    create_response = client.post(
+        "/leads",
+        json={
+            "name": "Charlie",
+            "email": "charlie.get@example.com",
+            "company": "Company C",
+        },
+    )
+
+    # Vérifie que la création du prospect a réussi.
+    assert create_response.status_code == 201
+
+    # Récupère l'identifiant généré par la base de données.
+    lead_id = create_response.json()["lead"]["id"]
+
+    # Demande les informations de ce prospect précis.
+    response = client.get(f"/leads/{lead_id}")
+
+    # Vérifie que la requête a réussi.
+    assert response.status_code == 200
+
+    # Vérifie que l'API renvoie le bon prospect.
+    lead = response.json()
+    assert lead["id"] == lead_id
+    assert lead["name"] == "Charlie"
+    assert lead["email"] == "charlie.get@example.com"
+    assert lead["company"] == "Company C"
+
+
+def test_get_lead_by_id_returns_404_when_missing():
+    """Vérifie que l'API renvoie 404 pour un prospect inexistant."""
+
+    # Importe le client HTTP et l'application FastAPI.
+    from fastapi.testclient import TestClient
+    from main import app
+
+    # Crée un client HTTP pour interroger l'API.
+    client = TestClient(app)
+
+    # Utilise un identifiant négatif, qui ne correspond pas à un ID normal.
+    response = client.get("/leads/-1")
+
+    # Vérifie que l'API signale l'absence du prospect.
+    assert response.status_code == 404
+
+    # Vérifie que le message d'erreur est explicite.
+    assert response.json()["detail"] == "Lead not found"
+
+
+
+def test_update_lead_persists_changes():
+    """Vérifie que les modifications d'un prospect sont enregistrées."""
+
+    # Importe le client HTTP et l'application FastAPI.
+    from fastapi.testclient import TestClient
+    from main import app
+
+    # Crée un client pour envoyer des requêtes à l'API.
+    client = TestClient(app)
+
+    # Crée un prospect avec ses informations initiales.
+    create_response = client.post(
+        "/leads",
+        json={
+            "name": "David",
+            "email": "david.old@example.com",
+            "company": "Old Company",
+        },
+    )
+
+    # Vérifie que la création a réussi.
+    assert create_response.status_code == 201
+
+    # Récupère l'identifiant du prospect créé.
+    lead_id = create_response.json()["lead"]["id"]
+
+    # Modifie les informations du prospect.
+    update_response = client.put(
+        f"/leads/{lead_id}",
+        json={
+            "name": "David Updated",
+            "email": "david.new@example.com",
+            "company": "New Company",
+        },
+    )
+
+    # Vérifie que la mise à jour a réussi.
+    assert update_response.status_code == 200
+
+    # Relit le prospect pour vérifier les données enregistrées.
+    get_response = client.get(f"/leads/{lead_id}")
+
+    assert get_response.status_code == 200
+
+    # Vérifie que toutes les nouvelles valeurs sont conservées.
+    updated_lead = get_response.json()
+    assert updated_lead["name"] == "David Updated"
+    assert updated_lead["email"] == "david.new@example.com"
+    assert updated_lead["company"] == "New Company"
+
+
+def test_delete_lead_removes_it_from_database():
+    """Vérifie qu'un prospect supprimé n'est plus accessible."""
+
+    # Importe le client HTTP et l'application FastAPI.
+    from fastapi.testclient import TestClient
+    from main import app
+
+    # Crée un client pour envoyer des requêtes à l'API.
+    client = TestClient(app)
+
+    # Crée un prospect que nous supprimerons ensuite.
+    create_response = client.post(
+        "/leads",
+        json={
+            "name": "Emma",
+            "email": "emma.delete@example.com",
+            "company": "Company D",
+        },
+    )
+
+    # Vérifie que la création a réussi.
+    assert create_response.status_code == 201
+
+    # Récupère l'identifiant du prospect créé.
+    lead_id = create_response.json()["lead"]["id"]
+
+    # Demande la suppression du prospect.
+    delete_response = client.delete(f"/leads/{lead_id}")
+
+    # Vérifie que la suppression a réussi.
+    assert delete_response.status_code == 200
+
+    # Vérifie le message de confirmation.
+    assert delete_response.json()["message"] == "Lead deleted successfully"
+
+    # Tente de récupérer le prospect supprimé.
+    get_response = client.get(f"/leads/{lead_id}")
+
+    # L'API doit répondre 404, car le prospect n'existe plus.
+    assert get_response.status_code == 404
+    assert get_response.json()["detail"] == "Lead not found"

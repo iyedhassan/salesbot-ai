@@ -148,6 +148,7 @@ def read_lead(lead_id: int, db: Session = Depends(get_db)):
 
 # Définit le code HTTP et la structure de la réponse de suppression.
 
+
 @router.delete(
     "/leads/{lead_id}",
     response_model=LeadOperationResponse,
