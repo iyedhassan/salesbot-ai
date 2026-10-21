@@ -1,3 +1,11 @@
+
+# Nom affiché dans la documentation de l'API.
 APP_NAME = "SalesBot AI"
-APP_VERSION = "0.1.0"
-APP_DESCRIPTION = "API backend for an AI-powered sales chatbot"
+
+# Description générale du projet.
+APP_DESCRIPTION = (
+    "API de gestion des prospects pour SalesBot AI."
+)
+
+# Version actuelle de l'application.
+APP_VERSION = "1.0.0"

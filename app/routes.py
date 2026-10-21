@@ -19,9 +19,13 @@ from sqlalchemy.exc import IntegrityError
 from app.services.lead_service import (
     get_lead_by_id,
     get_all_leads,
+    get_lead_stats,  # Calcule les statistiques des prospects.
     update_lead,
     delete_lead,
 )
+
+# Importe le modèle qui structure la réponse des statistiques.
+from app.models.lead_stats import LeadStats
 
 router = APIRouter()
 
@@ -217,3 +221,10 @@ def update_lead_route(
         "message": "Lead updated successfully",
         "lead": updated_lead,
     }
+
+@router.get("/stats", response_model=LeadStats)
+def get_stats(db: Session = Depends(get_db)):
+    """Retourne les statistiques des prospects enregistrés."""
+
+    # Appelle le service qui calcule les statistiques en base de données.
+    return get_lead_stats(db)
