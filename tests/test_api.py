@@ -679,3 +679,43 @@ def test_delete_lead_removes_it_from_database():
     # L'API doit répondre 404, car le prospect n'existe plus.
     assert get_response.status_code == 404
     assert get_response.json()["detail"] == "Lead not found"
+
+
+
+def test_get_stats_returns_statistics():
+    """Vérifie que l'API renvoie les statistiques attendues."""
+
+    # Importe le client de test FastAPI.
+    from fastapi.testclient import TestClient
+
+    # Importe l'application à tester.
+    from main import app
+
+    # Crée un client HTTP pour envoyer des requêtes à l'API.
+    client = TestClient(app)
+
+    # Demande les statistiques à l'API.
+    response = client.get("/stats")
+
+    # Vérifie que la route répond avec le statut HTTP 200.
+    assert response.status_code == 200
+
+    # Convertit la réponse JSON en dictionnaire Python.
+    data = response.json()
+
+    # Vérifie la présence des trois champs attendus.
+    assert "total_leads" in data
+    assert "leads_with_company" in data
+    assert "leads_without_company" in data
+
+    # Vérifie que les valeurs sont des nombres entiers.
+    assert isinstance(data["total_leads"], int)
+    assert isinstance(data["leads_with_company"], int)
+    assert isinstance(data["leads_without_company"], int)
+
+    # Vérifie que les deux catégories couvrent le total.
+    assert (
+        data["leads_with_company"]
+        + data["leads_without_company"]
+        == data["total_leads"]
+    )
