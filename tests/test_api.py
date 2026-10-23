@@ -719,3 +719,148 @@ def test_get_stats_returns_statistics():
         + data["leads_without_company"]
         == data["total_leads"]
     )
+
+
+def test_lead_scoring_service():
+    """Vérifie le calcul du score d'un prospect complet."""
+
+    from types import SimpleNamespace
+    from app.services.lead_scoring import calculate_lead_score
+
+    # Crée un prospect fictif avec une adresse professionnelle apparente.
+    lead = SimpleNamespace(
+        id=1,
+        name="Alice Martin",
+        email="alice@entreprise.com",
+        company="Entreprise ABC",
+    )
+
+    # Calcule le score du prospect.
+    result = calculate_lead_score(lead)
+
+    # Vérifie le score, la priorité et l'identifiant.
+    assert result.lead_id == 1
+    assert result.score == 100
+    assert result.priority == "High"
+
+
+def test_lead_scoring_without_company():
+    """Vérifie le score d'un prospect sans entreprise."""
+
+    from types import SimpleNamespace
+    from app.services.lead_scoring import calculate_lead_score
+
+    # Gmail ne reçoit pas le bonus de domaine professionnel.
+    lead = SimpleNamespace(
+        id=2,
+        name="Karim Ben Ali",
+        email="karim@gmail.com",
+        company=None,
+    )
+
+    result = calculate_lead_score(lead)
+
+    # Nom (20) + e-mail (30) = 50 points.
+    assert result.score == 50
+    assert result.priority == "Medium"
+
+
+def test_lead_score_endpoint():
+    """Vérifie que la route de score répond correctement."""
+
+    from fastapi.testclient import TestClient
+    from main import app
+
+    client = TestClient(app)
+
+    # Récupère les prospects déjà présents dans la base de données.
+    leads_response = client.get("/leads")
+    assert leads_response.status_code == 200
+
+    leads = leads_response.json()
+
+    # Si aucun prospect n'existe, il n'y a rien à noter.
+    if not leads:
+        return
+
+    # Teste la route avec l'identifiant d'un prospect existant.
+    lead_id = leads[0]["id"]
+    response = client.get(f"/leads/{lead_id}/score")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["lead_id"] == lead_id
+    assert 0 <= data["score"] <= 100
+    assert data["priority"] in ["High", "Medium", "Low"]
+
+
+def test_lead_score_returns_404_for_missing_lead():
+    """Vérifie qu'un prospect inexistant renvoie une erreur 404."""
+
+    from fastapi.testclient import TestClient
+    from main import app
+
+    client = TestClient(app)
+
+    response = client.get("/leads/999999/score")
+
+    assert response.status_code == 404
+
+
+def test_scored_leads_endpoint_returns_sorted_results():
+    """Vérifie que les prospects sont classés par score décroissant."""
+    from fastapi.testclient import TestClient
+    from main import app
+
+    client = TestClient(app)
+    response = client.get("/leads/scored")
+
+    assert response.status_code == 200
+
+    leads = response.json()
+    scores = [lead["score"] for lead in leads]
+
+    # Les scores doivent être du plus élevé au plus faible.
+    assert scores == sorted(scores, reverse=True)
+
+    # Chaque résultat doit avoir les informations attendues.
+    for lead in leads:
+        assert "lead_id" in lead
+        assert "name" in lead
+        assert 0 <= lead["score"] <= 100
+        assert lead["priority"] in ["High", "Medium", "Low"]
+
+
+def test_scored_leads_endpoint_filters_by_priority():
+    """Vérifie que le filtre conserve uniquement la priorité demandée."""
+    from fastapi.testclient import TestClient
+    from main import app
+
+    client = TestClient(app)
+
+    for priority in ["High", "Medium", "Low"]:
+        response = client.get(
+            "/leads/scored",
+            params={"priority": priority},
+        )
+
+        assert response.status_code == 200
+
+        # Tous les résultats doivent correspondre au filtre.
+        for lead in response.json():
+            assert lead["priority"] == priority
+
+
+def test_scored_leads_endpoint_rejects_invalid_priority():
+    """Vérifie qu'une priorité inconnue est refusée."""
+    from fastapi.testclient import TestClient
+    from main import app
+
+    client = TestClient(app)
+
+    response = client.get(
+        "/leads/scored",
+        params={"priority": "Urgent"},
+    )
+
+    assert response.status_code == 422

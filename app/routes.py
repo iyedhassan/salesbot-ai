@@ -19,13 +19,20 @@ from sqlalchemy.exc import IntegrityError
 from app.services.lead_service import (
     get_lead_by_id,
     get_all_leads,
-    get_lead_stats,  # Calcule les statistiques des prospects.
+    get_lead_stats,
+    search_leads,
     update_lead,
     delete_lead,
 )
 
 # Importe le modèle qui structure la réponse des statistiques.
 from app.models.lead_stats import LeadStats
+
+# Modèle de réponse contenant le score et la priorité.
+from app.models.lead_score import LeadScore
+
+# Service qui calcule le score commercial.
+from app.services.lead_scoring import calculate_lead_score
 
 router = APIRouter()
 
@@ -104,17 +111,89 @@ def create_lead(lead: Lead, db: Session = Depends(get_db)):
 
 # Renvoie la liste des prospects.
 # list[LeadResponse] signifie : une liste d'objets LeadResponse.
-@router.get("/leads", response_model=list[LeadResponse])
-def get_leads(db: Session = Depends(get_db)):
-    """
-    Récupère tous les prospects enregistrés.
-    """
 
-    # Délègue la recherche à la couche service.
+@router.get("/leads", response_model=list[LeadResponse])
+def list_leads(
+    skip: int = 0,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+):
+    """Retourne une page de prospects."""
+
+    # Refuse un décalage négatif.
+    if skip < 0:
+        raise HTTPException(
+            status_code=422,
+            detail="skip must be greater than or equal to 0",
+        )
+
+    # Limite la taille de la page pour éviter des réponses trop lourdes.
+    if limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=422,
+            detail="limit must be between 1 and 100",
+        )
+
+    # Récupère uniquement les prospects demandés.
+    return (
+        db.query(LeadDB)
+        .order_by(LeadDB.id)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+
+@router.get("/leads/scored")
+def list_scored_leads(
+    priority: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Retourne les prospects triés par score, avec un filtre facultatif."""
+
+    # Vérifie que la priorité demandée est autorisée.
+    if priority is not None:
+        priority = priority.strip().capitalize()
+
+        if priority not in {"High", "Medium", "Low"}:
+            raise HTTPException(
+                status_code=422,
+                detail="priority must be High, Medium, or Low",
+            )
+
+    # Récupère les prospects enregistrés.
     leads = get_all_leads(db)
 
-    # Retourne la liste des prospects à FastAPI.
-    return leads
+    # Calcule le score et prépare les résultats.
+    scored_leads = []
+
+    for lead in leads:
+        result = calculate_lead_score(lead)
+
+        # Applique le filtre si une priorité a été demandée.
+        if priority is not None and result.priority != priority:
+            continue
+
+        scored_leads.append({
+            "lead_id": lead.id,
+            "name": lead.name,
+            "email": lead.email,
+            "company": lead.company,
+            "score": result.score,
+            "priority": result.priority,
+        })
+
+    # Classe les résultats du meilleur score au plus faible.
+    scored_leads.sort(
+        key=lambda item: item["score"],
+        reverse=True,
+    )
+
+    return scored_leads
+
+
+
 # Renvoie un seul prospect.
 # FastAPI valide la réponse avec LeadResponse.
 # Recherche un prospect à partir de son identifiant.
@@ -228,3 +307,41 @@ def get_stats(db: Session = Depends(get_db)):
 
     # Appelle le service qui calcule les statistiques en base de données.
     return get_lead_stats(db)
+
+
+
+@router.get("/leads/search", response_model=list[LeadResponse])
+def search_leads_route(
+    q: str,
+    db: Session = Depends(get_db),
+):
+    """Recherche des prospects à partir d'un texte."""
+
+    # Refuse une recherche vide après suppression des espaces.
+    if not q.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Search query cannot be empty",
+        )
+
+    # Retourne les prospects correspondant à la recherche.
+    return search_leads(db, q)
+
+
+
+@router.get("/leads/{lead_id}/score", response_model=LeadScore)
+def get_lead_score(lead_id: int, db: Session = Depends(get_db)):
+    """Calcule et retourne le score commercial d'un prospect."""
+
+    # Recherche le prospect dans la base de données.
+    lead = get_lead_by_id(db, lead_id)
+
+    # Retourne une erreur HTTP 404 si le prospect n'existe pas.
+    if lead is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Lead not found",
+        )
+
+    # Calcule le score puis retourne le résultat structuré.
+    return calculate_lead_score(lead)

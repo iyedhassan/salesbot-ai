@@ -9,6 +9,8 @@ from app.models.lead_db import LeadDB
 # Importe le modèle qui définit la réponse des statistiques.
 from app.models.lead_stats import LeadStats
 
+# Importe or_ pour rechercher dans plusieurs colonnes.
+from sqlalchemy import or_
 
 def get_lead_by_id(db: Session, lead_id: int) -> LeadDB | None:
     """Recherche un prospect par son identifiant."""
@@ -132,3 +134,31 @@ def delete_lead(db: Session, lead_id: int) -> LeadDB | None:
 
     # Renvoie les anciennes données du prospect supprimé.
     return lead
+
+
+
+def search_leads(db: Session, query: str) -> list[LeadDB]:
+    """Recherche des prospects par nom, e-mail ou entreprise."""
+
+    # Supprime les espaces superflus dans la recherche.
+    search_term = query.strip()
+
+    # Si la recherche est vide, renvoie une liste vide.
+    if not search_term:
+        return []
+
+    # Ajoute les jokers SQL pour rechercher une partie du texte.
+    pattern = f"%{search_term}%"
+
+    # Recherche le texte dans le nom, l'e-mail ou l'entreprise.
+    return (
+        db.query(LeadDB)
+        .filter(
+            or_(
+                LeadDB.name.ilike(pattern),
+                LeadDB.email.ilike(pattern),
+                LeadDB.company.ilike(pattern),
+            )
+        )
+        .all()
+    )
